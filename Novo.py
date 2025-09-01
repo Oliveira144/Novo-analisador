@@ -1,5 +1,4 @@
-# analisador_football_studio_final_complete.py
-# Requisitos: streamlit, pandas, numpy
+# analisador_football_studio_streamlit.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,10 +11,9 @@ import os
 # -------------------------
 st.set_page_config(page_title="Analisador Football Studio", layout="wide")
 STORAGE_FILE = "history_football_studio.csv"
-CONFIG_FILE = "patterns_config.json"
 LINE_LEN = 9
 EMOJI_MAP = {"C": "🔴", "V": "🔵", "E": "🟡"}
-COLOR_MAP = {"C": "background-color:#ffdddd;", "V": "background-color:#dde6ff;", "E": "background-color:#fff4cc;"}
+
 DEFAULT_PATTERNS = {
     'alternation': 2.0,'streak': 2.5,'cycle': 2.0,'pair_split': 1.6,'pair_split_ext': 1.7,
     'mirror': 1.8,'tie_anchor': 1.3,'false_pattern': 1.4,'micro_cycles': 1.2,'trend': 2.0,
@@ -23,7 +21,7 @@ DEFAULT_PATTERNS = {
 }
 
 # -------------------------
-# Funções utilitárias
+# Utilitários
 # -------------------------
 def normalize_entry(e):
     e=str(e).strip().upper()
@@ -165,7 +163,7 @@ def detect_alt_with_break(h):
     return {'found':False,'conf':0}
 
 # -------------------------
-# Aggregate, Markov e decisão
+# Funções de agregação, Markov e decisão
 # -------------------------
 def aggregate_detection(h,w=DEFAULT_PATTERNS):
     out={'alternation':detect_alternation(h),'streaks':detect_streaks(h),'cycle':detect_cycle(h),
@@ -213,5 +211,58 @@ def markov_predict(h,order=2):
     s=sum(probs.values())
     return {k:int(v/s*100) for k,v in probs.items()}
 
-def decide_bet(probs,level):
-    best=max(probs.items(),key=lambda x:x[1]); choice,conf=best
+def decide_bet(probs):
+    best=max(probs.items(),key=lambda x:x[1])
+    return best[0],best[1]
+
+# -------------------------
+# Carregar histórico
+# -------------------------
+if 'history' not in st.session_state:
+    if os.path.exists(STORAGE_FILE):
+        df=pd.read_csv(STORAGE_FILE)
+        st.session_state.history=[normalize_entry(x) for x in df['resultado'].astype(str).tolist() if normalize_entry(x)]
+    else:
+        st.session_state.history=[]
+history=st.session_state.history
+
+# -------------------------
+# Interface principal
+# -------------------------
+st.title("🔍 Analisador Inteligente — Football Studio")
+
+c1,c2,c3=st.columns(3)
+with c1: 
+    if st.button("🔴 Casa (C)"): history.append("C")
+with c2: 
+    if st.button("🔵 Visitante (V)"): history.append("V")
+with c3: 
+    if st.button("🟡 Empate (E)"): history.append("E")
+
+c4,c5=st.columns(2)
+with c4:
+    if st.button("🧹 Limpar Histórico"): history.clear()
+with c5:
+    if st.button("↩️ Desfazer Último") and history: history.pop()
+
+# Salvar histórico
+pd.DataFrame({"resultado": history}).to_csv(STORAGE_FILE,index=False)
+
+# Histórico horizontal
+st.subheader("Histórico (mais recente → mais antigo)")
+if history:
+    rev_hist=history[::-1]
+    for i in range(0,len(rev_hist),LINE_LEN):
+        st.write(" ".join([EMOJI_MAP[x] for x in rev_hist[i:i+LINE_LEN]]))
+
+# Análise
+if len(history)<3:
+    st.warning("Poucos dados para análise. Insira pelo menos 3 resultados.")
+else:
+    agg=aggregate_detection(history)
+    probs=markov_predict(history)
+    bet,conf=decide_bet(probs)
+    st.subheader("Análise Avançada")
+    st.write(f"Nível de Manipulação Detectado: {agg['level']} / 9")
+    st.write(f"Sugestão de Aposta: {EMOJI_MAP[bet]} ({conf}%)")
+    st.write("Probabilidades Markov:", probs)
