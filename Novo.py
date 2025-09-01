@@ -1,4 +1,4 @@
-# analisador_football_studio_avancado_sem_plotly.py
+# analisador_football_studio_avancado_com_botoes.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -491,7 +491,7 @@ def pattern_based_prediction(results, h):
     return probs, best
 
 # -------------------------
-# Funções de visualização (Simplificadas)
+# Funções de visualização
 # -------------------------
 def create_history_chart(history):
     if not history:
@@ -518,29 +518,33 @@ def main():
     
     st.sidebar.header("Adicionar Resultado")
     
-    col1, col2 = st.sidebar.columns([1, 1])
-    with col1:
-        new_entry = st.text_input("Novo Resultado (C, V, E)", key="new_entry_input").upper().strip()
-    with col2:
-        st.write("")
-        st.write("")
-        add_button = st.button("Adicionar")
-        
-    if add_button and new_entry:
-        entry = normalize_entry(new_entry)
-        if entry:
-            st.session_state.history.append(entry)
-            st.session_state.history_display += EMOJI_MAP[entry]
-        else:
-            st.sidebar.error("Entrada inválida. Use C, V ou E.")
+    # Substituir a entrada de texto e o botão único por 3 botões
+    cols_buttons = st.sidebar.columns(3)
     
+    with cols_buttons[0]:
+        casa_button = st.button(f"Casa {EMOJI_MAP['C']}", use_container_width=True)
+    with cols_buttons[1]:
+        visitante_button = st.button(f"Visitante {EMOJI_MAP['V']}", use_container_width=True)
+    with cols_buttons[2]:
+        empate_button = st.button(f"Empate {EMOJI_MAP['E']}", use_container_width=True)
+    
+    if casa_button:
+        st.session_state.history.append('C')
+        st.session_state.history_display += EMOJI_MAP['C']
+    elif visitante_button:
+        st.session_state.history.append('V')
+        st.session_state.history_display += EMOJI_MAP['V']
+    elif empate_button:
+        st.session_state.history.append('E')
+        st.session_state.history_display += EMOJI_MAP['E']
+        
     st.sidebar.markdown("---")
     st.sidebar.header("Controles")
     
     if st.sidebar.button("Limpar Histórico"):
         st.session_state.history = []
         st.session_state.history_display = ""
-    
+        
     # -------------------------
     # Análise principal
     # -------------------------
@@ -549,7 +553,6 @@ def main():
         st.markdown(f"**Total de Rodadas:** {len(st.session_state.history)}")
         st.markdown(f"**Sequência:** {' '.join(st.session_state.history_display)}")
         
-        # Gráfico de barras simples para a frequência de resultados
         st.markdown("#### Frequência dos Resultados")
         result_counts = pd.DataFrame(Counter(st.session_state.history).items(), columns=['Resultado', 'Contagem'])
         st.bar_chart(result_counts.set_index('Resultado'))
@@ -578,7 +581,6 @@ def main():
         
         with col_main3:
             st.markdown("#### Probabilidades")
-            # Usando uma tabela ou texto para exibir as probabilidades
             probs_df = pd.DataFrame(probs.items(), columns=['Resultado', 'Probabilidade'])
             st.dataframe(probs_df.set_index('Resultado'))
         
