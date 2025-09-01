@@ -14,6 +14,8 @@ def get_valores(h):
 def maior_sequencia(h):
     h = get_valores(h)
     max_seq = atual = 1
+    if not h:
+        return 0
     for i in range(1, len(h)):
         if h[i] == h[i - 1]:
             atual += 1
@@ -84,6 +86,69 @@ def bolha_cor(r):
         "E": "🟨",
         "🔽": "⬇️"
     }.get(r, "⬜")
+
+# Novos algoritmos de análise
+def analise_por_terco(h):
+    valores = get_valores(h)
+    if len(valores) < 27:
+        return {}
+    terco1 = valores[:9]
+    terco2 = valores[9:18]
+    terco3 = valores[18:27]
+    
+    return {
+        "Terço 1 (1-9)": f"{terco1.count('C')}C/{terco1.count('V')}V/{terco1.count('E')}E",
+        "Terço 2 (10-18)": f"{terco2.count('C')}C/{terco2.count('V')}V/{terco2.count('E')}E",
+        "Terço 3 (19-27)": f"{terco3.count('C')}C/{terco3.count('V')}V/{terco3.count('E')}E"
+    }
+
+def contagem_sequencias(h):
+    valores = get_valores(h)
+    if len(valores) < 9:
+        return {}
+    sequencias = {"seq_2": 0, "seq_3": 0, "seq_4+": 0}
+    atual_seq = 1
+    
+    for i in range(1, len(valores)):
+        if valores[i] == valores[i-1]:
+            atual_seq += 1
+        else:
+            if atual_seq == 2: sequencias["seq_2"] += 1
+            elif atual_seq == 3: sequencias["seq_3"] += 1
+            elif atual_seq >= 4: sequencias["seq_4+"] += 1
+            atual_seq = 1
+    
+    # Adicionar a última sequência
+    if atual_seq == 2: sequencias["seq_2"] += 1
+    elif atual_seq == 3: sequencias["seq_3"] += 1
+    elif atual_seq >= 4: sequencias["seq_4+"] += 1
+    
+    return sequencias
+
+def quebra_padrao(h):
+    valores = get_valores(h)
+    if len(valores) < 3:
+        return "Poucos dados"
+    
+    padrao_alternancia = all(valores[i] != valores[i-1] for i in range(1, len(valores[-6:])))
+    
+    if padrao_alternancia and sequencia_final(h) > 1:
+        return "Quebra de alternância detectada"
+    return "Não houve quebra de padrão"
+
+def variacao_alternancia(h):
+    valores = get_valores(h)
+    if len(valores) < 5:
+        return "Poucos dados"
+    
+    total_alternancias = alternancia(valores)
+    total_jogadas_validas = len(valores) - 1
+    
+    # Alternância esperada seria em torno de 50%
+    esperado = total_jogadas_validas / 2
+    variacao_percentual = ((total_alternancias - esperado) / esperado) * 100
+    
+    return f"{variacao_percentual:.2f}%"
 
 def sugestao(h):
     valores = get_valores(h)
@@ -167,13 +232,27 @@ col_metrica1.metric("Maior sequência", maior_sequencia(h))
 col_metrica2.metric("Alternância total", alternancia(h))
 col_metrica3.metric("Distância entre empates", dist_empates(h))
 
+st.write("---")
 col_metrica4, col_metrica5 = st.columns(2)
 col_metrica4.metric("Eco visual", eco_visual(h))
 col_metrica5.metric("Eco parcial", eco_parcial(h))
-
-st.metric("Blocos espelhados", blocos_espelhados(h))
-st.write(f"Alternância por linha: **{alternancia_por_linha(h)}**")
+st.write(f"Blocos espelhados: **{blocos_espelhados(h)}**")
 st.write(f"Tendência final: **{tendencia_final(h)}**")
+st.write(f"Alternância por linha: **{alternancia_por_linha(h)}**")
+
+# Novas métricas de análise
+st.subheader("🔎 Análise Avançada de Padrões")
+analise_tercos = analise_por_terco(h)
+if analise_tercos:
+    col_t1, col_t2, col_t3 = st.columns(3)
+    col_t1.metric("Tendência Terço 1", analise_tercos["Terço 1 (1-9)"])
+    col_t2.metric("Tendência Terço 2", analise_tercos["Terço 2 (10-18)"])
+    col_t3.metric("Tendência Terço 3", analise_tercos["Terço 3 (19-27)"])
+
+st.write("---")
+st.write(f"Contagem de Sequências: **{contagem_sequencias(h)}**")
+st.write(f"Quebra de Padrão (Breakout): **{quebra_padrao(h)}**")
+st.write(f"Variação de Alternância: **{variacao_alternancia(h)}**")
 
 # ---
 # Alertas
@@ -189,6 +268,8 @@ if dist_empates(h) == 1:
     alertas.append(("🟨 Empates consecutivos — instabilidade", "error"))
 if blocos_espelhados(h) >= 1:
     alertas.append(("🧩 Bloco espelhado — reflexo estratégico", "info"))
+if quebra_padrao(h) == "Quebra de alternância detectada":
+    alertas.append(("💥 Padrão de alternância quebrado - nova tendência pode estar surgindo", "warning"))
 
 if not alertas:
     st.info("Nenhum padrão crítico identificado.")
