@@ -3,10 +3,7 @@ import numpy as np
 import pandas as pd
 from collections import deque, Counter
 import math
-from scipy import stats
 from datetime import datetime
-import warnings
-warnings.filterwarnings('ignore')
 
 # =====================================
 # CONFIGURAÇÕES PROFISSIONAIS
@@ -116,7 +113,7 @@ class FootballStudioAnalyzer:
         return transition_matrix, reliability
     
     def chi_square_independence_test(self, sequence):
-        """Teste Chi-quadrado para independência"""
+        """Teste Chi-quadrado para independência (implementação própria)"""
         if len(sequence) < 20:
             return None, None, 0
             
@@ -133,13 +130,36 @@ class FootballStudioAnalyzer:
             return None, None, 0
             
         try:
-            chi2, p_value, dof, expected = stats.chi2_contingency(contingency)
-            return chi2, p_value, min(1.0, len(encoded) / 50)
+            # Calcula valores esperados
+            row_totals = contingency.sum(axis=1)
+            col_totals = contingency.sum(axis=0)
+            total = contingency.sum()
+            
+            expected = np.outer(row_totals, col_totals) / total
+            
+            # Calcula chi-quadrado
+            chi2 = np.sum((contingency - expected)**2 / (expected + 1e-10))
+            
+            # Graus de liberdade
+            dof = (contingency.shape[0] - 1) * (contingency.shape[1] - 1)
+            
+            # Aproximação do p-valor usando distribuição normal
+            # Para grandes amostras, chi2 aproxima normal
+            if dof > 0:
+                p_value = 1 - self._normal_cdf((chi2 - dof) / math.sqrt(2 * dof))
+            else:
+                p_value = 0.5
+                
+            return chi2, max(0, min(1, p_value)), min(1.0, len(encoded) / 50)
         except:
             return None, None, 0
     
+    def _normal_cdf(self, x):
+        """Função de distribuição cumulativa normal padrão (aproximação)"""
+        return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+    
     def runs_test(self, sequence):
-        """Teste de corridas para aleatoriedade"""
+        """Teste de corridas para aleatoriedade (implementação própria)"""
         if len(sequence) < 15:
             return None, None, 0
             
@@ -170,9 +190,9 @@ class FootballStudioAnalyzer:
             return None, None, 0
             
         z_score = (runs - expected_runs) / math.sqrt(variance)
-        p_value = 2 * (1 - stats.norm.cdf(abs(z_score)))
+        p_value = 2 * (1 - self._normal_cdf(abs(z_score)))
         
-        return z_score, p_value, min(1.0, len(encoded) / 40)
+        return z_score, max(0, min(1, p_value)), min(1.0, len(encoded) / 40)
     
     def autocorrelation_analysis(self, sequence, max_lag=10):
         """Análise de autocorrelação para detectar padrões temporais"""
@@ -188,17 +208,24 @@ class FootballStudioAnalyzer:
             if len(encoded) - lag < 5:
                 break
                 
-            x1 = encoded[:-lag]
-            x2 = encoded[lag:]
+            x1 = np.array(encoded[:-lag])
+            x2 = np.array(encoded[lag:])
             
             if len(x1) == 0 or len(x2) == 0:
                 continue
                 
-            # Calcula correlação de Pearson
+            # Calcula correlação de Pearson manualmente
             try:
-                corr, _ = stats.pearsonr(x1, x2)
-                if not math.isnan(corr):
-                    autocorrs.append((lag, corr))
+                mean_x1 = np.mean(x1)
+                mean_x2 = np.mean(x2)
+                
+                numerator = np.sum((x1 - mean_x1) * (x2 - mean_x2))
+                denominator = math.sqrt(np.sum((x1 - mean_x1)**2) * np.sum((x2 - mean_x2)**2))
+                
+                if denominator > 0:
+                    corr = numerator / denominator
+                    if not math.isnan(corr):
+                        autocorrs.append((lag, corr))
             except:
                 continue
         
@@ -215,7 +242,7 @@ class FootballStudioAnalyzer:
             return None, 0
             
         # Remove a tendência (detrend)
-        detrended = encoded - np.mean(encoded)
+        detrended = np.array(encoded) - np.mean(encoded)
         
         # FFT
         fft_result = np.fft.fft(detrended)
@@ -255,26 +282,13 @@ class FootballStudioAnalyzer:
         
         entropy = 0
         for count in counter.values():
-            p = count / total
-            entropy -= p * math.log2(p)
+            if count > 0:
+                p = count / total
+                entropy -= p * math.log2(p)
         
         # Normaliza (máximo para 3 estados é log2(3))
         max_entropy = math.log2(3)
         normalized_entropy = entropy / max_entropy
-        
-        # Entropia condicional (baseada em pares)
-        conditional_entropy = 0
-        if len(encoded) > 1:
-            pairs = [(encoded[i], encoded[i+1]) for i in range(len(encoded)-1)]
-            pair_counter = Counter(pairs)
-            
-            for (state1, state2), count in pair_counter.items():
-                state1_count = counter[state1]
-                conditional_prob = count / state1_count
-                joint_prob = count / (total - 1)
-                
-                if conditional_prob > 0:
-                    conditional_entropy -= joint_prob * math.log2(conditional_prob)
         
         reliability = min(1.0, len(encoded) / 30)
         return normalized_entropy, reliability
@@ -316,6 +330,35 @@ class FootballStudioAnalyzer:
             }
         }, reliability
 
+    def pattern_detection(self, sequence):
+        """Detecta padrões repetitivos na sequência"""
+        if len(sequence) < 6:
+            return []
+            
+        patterns = []
+        
+        # Procura por padrões de tamanho 2 a 6
+        for pattern_length in range(2, min(7, len(sequence) // 3)):
+            pattern_counts = Counter()
+            
+            for i in range(len(sequence) - pattern_length + 1):
+                pattern = tuple(sequence[i:i + pattern_length])
+                pattern_counts[pattern] += 1
+            
+            # Considera apenas padrões que aparecem mais de 1 vez
+            for pattern, count in pattern_counts.items():
+                if count > 1:
+                    significance = count / (len(sequence) - pattern_length + 1)
+                    if significance > 0.1:  # Pelo menos 10% de ocorrência
+                        patterns.append({
+                            'pattern': list(pattern),
+                            'count': count,
+                            'length': pattern_length,
+                            'significance': significance
+                        })
+        
+        return sorted(patterns, key=lambda x: x['significance'], reverse=True)[:5]
+
 # =====================================
 # INICIALIZAÇÃO
 # =====================================
@@ -334,7 +377,7 @@ analyzer = FootballStudioAnalyzer()
 # Header
 st.markdown("""
 <div class="header-section">
-    <h1>⚽ Football Studio Pro Analytics</h1>
+    <h1>🏈 Football Studio Pro Analytics</h1>
     <p>Análise estatística profissional baseada em métodos matemáticos rigorosos</p>
 </div>
 """, unsafe_allow_html=True)
@@ -587,22 +630,27 @@ if len(sequence) >= 10:
             else:
                 st.error("❌ Muito baixa aleatoriedade - forte presença de padrões")
 
-    # Análise no Domínio da Frequência
-    if show_advanced_metrics and len(sequence) >= 32:
-        st.subheader("🌊 Análise Espectral (Domínio da Frequência)")
+    # Detecção de Padrões
+    if show_advanced_metrics and len(sequence) >= 12:
+        st.subheader("🔍 Detecção de Padrões Repetitivos")
         
-        periods, reliability = analyzer.frequency_domain_analysis(sequence)
-        if periods and reliability > 0.3:
-            st.write(f"**Períodos cíclicos detectados (confiabilidade: {reliability*100:.1f}%):**")
+        patterns = analyzer.pattern_detection(sequence)
+        if patterns:
+            st.write("**Padrões significativos detectados:**")
             
-            for period, magnitude in periods[:5]:
-                period_int = int(round(period))
-                if 2 <= period_int <= len(sequence) // 3:
-                    strength = "FORTE" if magnitude > np.mean([m for _, m in periods]) * 1.5 else "MODERADO"
-                    st.write(f"• **Período {period_int}:** Magnitude {magnitude:.2f} ({strength})")
-                    
-                    if period_int <= 10:
-                        st.write(f"  ↳ Ciclo detectado a cada {period_int} jogos")
+            for i, pattern in enumerate(patterns[:5], 1):
+                pattern_str = " → ".join(pattern['pattern'])
+                significance_pct = pattern['significance'] * 100
+                
+                if pattern['significance'] > 0.3:
+                    strength = "🔴 MUITO FORTE"
+                elif pattern['significance'] > 0.2:
+                    strength = "🟡 FORTE"
+                else:
+                    strength = "🟢 MODERADO"
+                
+                st.write(f"**{i}. {pattern_str}**")
+                st.write(f"   ↳ Ocorrências: {pattern['count']} | Significância: {significance_pct:.1f}% ({strength})")
 
 # =====================================
 # HISTÓRICO E MÉTRICAS BÁSICAS
@@ -627,7 +675,7 @@ if sequence:
         df_history = pd.DataFrame(rows, columns=[f"Pos {i+1}" for i in range(10)])
         
         # Substitui símbolos para melhor visualização
-        df_display = df_history.replace({'C': '🏠 C', 'V': '✈️ V', 'E': '⚖️ E', '': ''})
+        df_display = df_history.replace({'C': '🏠', 'V': '✈️', 'E': '⚖️', '': ''})
         
         st.write("**Últimas 30 jogadas (mais recentes à direita):**")
         st.dataframe(df_display, use_container_width=True, hide_index=True)
@@ -663,11 +711,3 @@ else:
 # =====================================
 
 st.markdown("---")
-st.markdown("""
-**⚠️ Aviso Legal:** Esta ferramenta utiliza métodos estatísticos rigorosos para análise de padrões, 
-mas não garante predições futuras. Os resultados são baseados em probabilidades matemáticas e devem 
-ser interpretados dentro do contexto de análise estatística. Use com responsabilidade.
-
-**📚 Métodos utilizados:** Cadeias de Markov, Teste Chi-quadrado, Teste de Corridas, 
-Análise de Autocorrelação, Entropia de Shannon, Análise Espectral (FFT).
-""")
