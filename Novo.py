@@ -2,8 +2,6 @@ import streamlit as st
 from collections import deque, Counter
 import math
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
 # -------------------------
@@ -25,45 +23,83 @@ st.markdown("""
 <style>
     .main-header {
         background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
-        padding: 1rem;
-        border-radius: 10px;
+        padding: 1.5rem;
+        border-radius: 15px;
         text-align: center;
         color: white;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     .metric-card {
         background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #007BFF;
+        padding: 1.5rem;
+        border-radius: 12px;
+        border-left: 5px solid #007BFF;
         margin: 0.5rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .pattern-alert {
-        background: #fff3cd;
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
         border: 1px solid #ffeaa7;
-        border-radius: 8px;
-        padding: 1rem;
+        border-radius: 12px;
+        padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .prediction-high {
-        background: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 8px;
-        padding: 1rem;
+        background: linear-gradient(135deg, #d4edda, #c3e6cb);
+        border: 2px solid #28a745;
+        border-radius: 12px;
+        padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 4px 8px rgba(40,167,69,0.2);
     }
     .prediction-medium {
-        background: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 8px;
-        padding: 1rem;
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+        border: 2px solid #ffc107;
+        border-radius: 12px;
+        padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 4px 8px rgba(255,193,7,0.2);
     }
     .prediction-low {
-        background: #f8d7da;
-        border: 1px solid #f5c6cb;
-        border-radius: 8px;
+        background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+        border: 2px solid #dc3545;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 4px 8px rgba(220,53,69,0.2);
+    }
+    .game-bubble {
+        display: inline-block;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 50px;
+        margin: 5px;
+        font-size: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .bubble-casa { background: linear-gradient(135deg, #ff6b6b, #ee5a52); color: white; }
+    .bubble-visitante { background: linear-gradient(135deg, #4ecdc4, #45b7b8); color: white; }
+    .bubble-empate { background: linear-gradient(135deg, #ffe66d, #ff6b6b); color: white; }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+    .trend-arrow {
+        font-size: 1.5rem;
+        margin: 0 10px;
+    }
+    .sequence-display {
+        font-size: 2rem;
+        text-align: center;
         padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 10px;
         margin: 1rem 0;
     }
 </style>
@@ -80,6 +116,9 @@ if "timestamps" not in st.session_state:
 # -------------------------
 def bolha_cor(r):
     return {"C": "🏠", "V": "✈️", "E": "⚖️"}.get(r, "⬜")
+
+def get_css_class(r):
+    return {"C": "bubble-casa", "V": "bubble-visitante", "E": "bubble-empate"}.get(r, "")
 
 def get_valores(h, window=None):
     valores = [x for x in h if x in ("C","V","E")]
@@ -127,10 +166,9 @@ def analise_ciclos(h):
 def analise_momentum(h):
     """Analisa o momentum atual baseado em múltiplos fatores"""
     v = get_valores(h)
-    if len(v) < 5: return {"score": 0, "direcao": "neutro", "intensidade": "baixa"}
+    if len(v) < 5: return {"score": 0, "direcao": "neutro", "intensidade": "baixa", "confianca": 0}
     
     ult_5 = v[-5:]
-    ult_3 = v[-3:]
     
     scores = {"C": 0, "V": 0, "E": 0}
     
@@ -141,8 +179,8 @@ def analise_momentum(h):
     
     # Bonus por sequência
     seq_atual = sequencia_final(h)
-    if seq_atual >= 2:
-        scores[v[-1]] += seq_atual * 0.8
+    if seq_atual["tamanho"] >= 2:
+        scores[v[-1]] += seq_atual["tamanho"] * 0.8
     
     # Analise tendência
     max_score = max(scores.values())
@@ -160,7 +198,7 @@ def analise_momentum(h):
 def detectar_reversoes(h):
     """Detecta padrões de reversão de tendência"""
     v = get_valores(h)
-    if len(v) < 7: return {"reversoes": [], "probabilidade_reversao": 0}
+    if len(v) < 7: return {"reversoes": [], "probabilidade_reversao": 0, "seq_atual": 0}
     
     reversoes = []
     
@@ -175,7 +213,7 @@ def detectar_reversoes(h):
             })
     
     # Calcula probabilidade de reversão atual
-    seq_atual = sequencia_final(h)
+    seq_atual = sequencia_final(h)["tamanho"]
     prob_reversao = 0
     
     if seq_atual >= 3:
@@ -200,24 +238,57 @@ def analise_distribuicao_avancada(h):
     
     # Frequências esperadas vs observadas
     freq_esperada = total / 3
-    desvios = {k: abs(contagem[k] - freq_esperada) for k in ['C', 'V', 'E']}
+    desvios = {k: abs(contagem.get(k, 0) - freq_esperada) for k in ['C', 'V', 'E']}
     
     # Chi-square test approximation
     chi_square = sum((contagem.get(k, 0) - freq_esperada)**2 / freq_esperada for k in ['C', 'V', 'E'])
     
     # Coeficiente de variação
-    valores_freq = list(contagem.values())
+    valores_freq = [contagem.get(k, 0) for k in ['C', 'V', 'E']]
     media_freq = sum(valores_freq) / len(valores_freq)
-    cv = (math.sqrt(sum((f - media_freq)**2 for f in valores_freq) / len(valores_freq)) / media_freq) * 100
+    cv = 0
+    if media_freq > 0:
+        cv = (math.sqrt(sum((f - media_freq)**2 for f in valores_freq) / len(valores_freq)) / media_freq) * 100
     
     return {
         "distribuicao": dict(contagem),
         "desvios": desvios,
         "chi_square": chi_square,
         "coef_variacao": cv,
-        "mais_defasado": min(desvios.keys(), key=lambda k: contagem[k]),
+        "mais_defasado": min(desvios.keys(), key=lambda k: contagem.get(k, 0)),
         "mais_frequente": contagem.most_common(1)[0][0] if contagem else None
     }
+
+def analise_padroes_especiais(h):
+    """Detecta padrões especiais como alternância, zigzag, etc."""
+    v = get_valores(h)
+    if len(v) < 6: return {}
+    
+    padroes = {}
+    
+    # Alternância perfeita
+    alternancia_perfeita = all(v[i] != v[i+1] for i in range(len(v)-1))
+    padroes["alternancia_perfeita"] = alternancia_perfeita
+    
+    # Padrão ABC (C-V-E repetindo)
+    if len(v) >= 6:
+        abc_pattern = all(v[i] == v[i-3] for i in range(3, min(9, len(v))))
+        padroes["padrao_abc"] = abc_pattern
+    
+    # Dominância recente (70%+ nos últimos 9)
+    if len(v) >= 9:
+        ult_9 = v[-9:]
+        contagem_9 = Counter(ult_9)
+        max_freq = max(contagem_9.values())
+        dominancia = (max_freq / 9) >= 0.7
+        resultado_dominante = contagem_9.most_common(1)[0][0] if contagem_9 else None
+        padroes["dominancia_recente"] = {
+            "ativo": dominancia,
+            "resultado": resultado_dominante,
+            "frequencia": max_freq
+        }
+    
+    return padroes
 
 # Funções existentes otimizadas
 def maior_sequencia(h):
@@ -263,6 +334,32 @@ def entropia(h):
     maxH = math.log2(3)
     return (H / maxH) * 100
 
+def calcular_tendencias(h):
+    """Calcula tendências de curto e longo prazo"""
+    v = get_valores(h)
+    if len(v) < 6: return {}
+    
+    # Tendência curto prazo (últimas 6)
+    curto = v[-6:]
+    contagem_curto = Counter(curto)
+    
+    # Tendência longo prazo (últimas 18 ou todas se menor)
+    longo = v[-18:] if len(v) >= 18 else v
+    contagem_longo = Counter(longo)
+    
+    return {
+        "curto_prazo": {
+            "periodo": 6,
+            "distribuicao": dict(contagem_curto),
+            "dominante": contagem_curto.most_common(1)[0] if contagem_curto else None
+        },
+        "longo_prazo": {
+            "periodo": len(longo),
+            "distribuicao": dict(contagem_longo),
+            "dominante": contagem_longo.most_common(1)[0] if contagem_longo else None
+        }
+    }
+
 # -------------------------
 # Sistema de predição aprimorado
 # -------------------------
@@ -273,7 +370,7 @@ def sistema_predicao_avancado(h):
         return {
             "predicao": None,
             "confianca": 0,
-            "explicacao": "Histórico insuficiente",
+            "explicacao": "Histórico insuficiente (mín. 5 jogos)",
             "algoritmos": {}
         }
     
@@ -282,12 +379,14 @@ def sistema_predicao_avancado(h):
     
     # 1. Análise de Momentum
     momentum = analise_momentum(h)
-    peso_momentum = momentum["confianca"] / 100
-    algoritmos["momentum"] = {
-        "predicao": momentum["direcao"],
-        "peso": peso_momentum,
-        "confianca": momentum["confianca"]
-    }
+    if momentum["confianca"] > 30:
+        peso_momentum = momentum["confianca"] / 100
+        algoritmos["momentum"] = {
+            "predicao": momentum["direcao"],
+            "peso": peso_momentum,
+            "confianca": momentum["confianca"],
+            "descricao": f"Momentum {momentum['intensidade']} para {momentum['direcao']}"
+        }
     
     # 2. Análise de Reversão
     reversao = detectar_reversoes(h)
@@ -297,7 +396,8 @@ def sistema_predicao_avancado(h):
         algoritmos["reversao"] = {
             "predicao": predicao_reversao,
             "peso": reversao["probabilidade_reversao"] / 100,
-            "confianca": reversao["probabilidade_reversao"]
+            "confianca": reversao["probabilidade_reversao"],
+            "descricao": f"Reversão após {reversao['seq_atual']} jogos consecutivos"
         }
     
     # 3. Análise de Distribuição
@@ -305,8 +405,9 @@ def sistema_predicao_avancado(h):
     if dist and dist["mais_defasado"]:
         algoritmos["distribuicao"] = {
             "predicao": dist["mais_defasado"],
-            "peso": 0.3,
-            "confianca": 40
+            "peso": 0.4,
+            "confianca": 45,
+            "descricao": f"Compensação estatística - {dist['mais_defasado']} está defasado"
         }
     
     # 4. Análise de Ciclos
@@ -319,15 +420,29 @@ def sistema_predicao_avancado(h):
             algoritmos["ciclos"] = {
                 "predicao": padrao[pos_atual],
                 "peso": melhor_ciclo["repeticoes"] * 0.2,
-                "confianca": min(70, melhor_ciclo["repeticoes"] * 25)
+                "confianca": min(75, melhor_ciclo["repeticoes"] * 25),
+                "descricao": f"Ciclo detectado: {'-'.join(padrao)} (repetido {melhor_ciclo['repeticoes']}x)"
             }
+    
+    # 5. Análise de Padrões Especiais
+    padroes = analise_padroes_especiais(h)
+    if padroes.get("dominancia_recente", {}).get("ativo"):
+        dom = padroes["dominancia_recente"]
+        # Se há dominância, apostar no contrário
+        contrario = "V" if dom["resultado"] == "C" else ("C" if dom["resultado"] == "V" else "C")
+        algoritmos["anti_dominancia"] = {
+            "predicao": contrario,
+            "peso": 0.6,
+            "confianca": 55,
+            "descricao": f"Anti-dominância - {dom['resultado']} dominou {dom['frequencia']}/9 recentes"
+        }
     
     # Combina predições
     if not algoritmos:
         return {
             "predicao": None,
             "confianca": 0,
-            "explicacao": "Nenhum padrão detectado",
+            "explicacao": "Nenhum padrão claro detectado",
             "algoritmos": {}
         }
     
@@ -336,19 +451,32 @@ def sistema_predicao_avancado(h):
     peso_total = 0
     
     for nome, alg in algoritmos.items():
-        votos[alg["predicao"]] += alg["peso"] * alg["confianca"]
-        peso_total += alg["peso"] * alg["confianca"]
+        peso_real = alg["peso"] * (alg["confianca"] / 100)
+        votos[alg["predicao"]] += peso_real
+        peso_total += peso_real
+    
+    if peso_total == 0:
+        return {
+            "predicao": None,
+            "confianca": 0,
+            "explicacao": "Algoritmos sem peso suficiente",
+            "algoritmos": algoritmos
+        }
     
     predicao_final = max(votos.keys(), key=lambda k: votos[k])
-    confianca_final = (votos[predicao_final] / peso_total) if peso_total > 0 else 0
+    confianca_final = (votos[predicao_final] / peso_total) * 100
     
     # Gera explicação
-    explicacao_parts = []
-    for nome, alg in algoritmos.items():
-        if alg["predicao"] == predicao_final:
-            explicacao_parts.append(f"{nome.title()}: {alg['confianca']:.1f}%")
+    algoritmos_relevantes = [
+        alg for alg in algoritmos.values() 
+        if alg["predicao"] == predicao_final and alg["confianca"] > 30
+    ]
     
-    explicacao = f"Baseado em: {', '.join(explicacao_parts)}"
+    if algoritmos_relevantes:
+        explicacao = f"Baseado em {len(algoritmos_relevantes)} algoritmo(s): "
+        explicacao += "; ".join([alg["descricao"] for alg in algoritmos_relevantes[:2]])
+    else:
+        explicacao = "Predição baseada em análise combinada"
     
     return {
         "predicao": predicao_final,
@@ -381,31 +509,39 @@ with st.sidebar:
     st.header("📊 Estatísticas Rápidas")
     if st.session_state.historico:
         h = st.session_state.historico
-        total_jogos = len([x for x in h if x in ["C","V","E"]])
+        total_jogos = len(get_valores(h))
         st.metric("Total de jogos", total_jogos)
         
         if total_jogos > 0:
             contagem = Counter(get_valores(h))
             for resultado, emoji in [("C", "🏠"), ("V", "✈️"), ("E", "⚖️")]:
-                pct = (contagem.get(resultado, 0) / total_jogos) * 100
-                st.metric(f"{emoji} {resultado}", f"{contagem.get(resultado, 0)} ({pct:.1f}%)")
+                count = contagem.get(resultado, 0)
+                pct = (count / total_jogos) * 100 if total_jogos > 0 else 0
+                st.metric(f"{emoji} {resultado}", f"{count} ({pct:.1f}%)")
+        
+        # Últimos resultados na sidebar
+        if total_jogos > 0:
+            st.subheader("🎯 Últimos 10")
+            ultimos_10 = list(reversed(get_valores(h, 10)))
+            emoji_sequence = " ".join([bolha_cor(r) for r in ultimos_10])
+            st.write(emoji_sequence)
 
 # Entrada de resultados
 st.subheader("🎮 Entrada de Resultados")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    if st.button("🏠 Casa (C)", use_container_width=True):
+    if st.button("🏠 Casa (C)", use_container_width=True, type="primary"):
         add_result("C")
         st.rerun()
 
 with col2:
-    if st.button("✈️ Visitante (V)", use_container_width=True):
+    if st.button("✈️ Visitante (V)", use_container_width=True, type="primary"):
         add_result("V")
         st.rerun()
 
 with col3:
-    if st.button("⚖️ Empate (E)", use_container_width=True):
+    if st.button("⚖️ Empate (E)", use_container_width=True, type="primary"):
         add_result("E")
         st.rerun()
 
@@ -438,17 +574,20 @@ if len(get_valores(h)) >= 5 and auto_predict:
         if confianca >= confidence_threshold:
             css_class = "prediction-high"
             icon = "🟢"
+            nivel = "ALTA"
         elif confianca >= 40:
             css_class = "prediction-medium" 
             icon = "🟡"
+            nivel = "MÉDIA"
         else:
             css_class = "prediction-low"
             icon = "🔴"
+            nivel = "BAIXA"
         
         st.markdown(f"""
         <div class="{css_class}">
-            <h3>{icon} Predição: {bolha_cor(predicao["predicao"])} {predicao["predicao"]}</h3>
-            <p><strong>Confiança:</strong> {confianca:.1f}%</p>
+            <h3>{icon} PREDIÇÃO: {bolha_cor(predicao["predicao"])} {predicao["predicao"]}</h3>
+            <p><strong>Confiança {nivel}:</strong> {confianca:.1f}%</p>
             <p><strong>Explicação:</strong> {predicao["explicacao"]}</p>
         </div>
         """, unsafe_allow_html=True)
@@ -457,50 +596,50 @@ if len(get_valores(h)) >= 5 and auto_predict:
         st.progress(confianca / 100)
         
         if show_advanced and predicao["algoritmos"]:
-            with st.expander("📊 Detalhes dos Algoritmos"):
+            with st.expander("🔍 Detalhes dos Algoritmos de Análise"):
                 for nome, alg in predicao["algoritmos"].items():
-                    st.write(f"**{nome.title()}**: {alg['predicao']} ({alg['confianca']:.1f}%)")
+                    st.write(f"**{nome.title()}**: {alg['predicao']} - {alg['confianca']:.1f}% confiança")
+                    st.write(f"   ↳ {alg['descricao']}")
+                    st.write("")
 
 # Histórico visual
 if get_valores(h):
     st.subheader("📈 Histórico Visual")
     
-    # Cria gráfico de linha temporal
+    # Display das jogadas com CSS customizado
     valores = get_valores(h)
-    if len(valores) >= 3:
-        df_hist = pd.DataFrame({
-            'Jogo': range(1, len(valores) + 1),
-            'Resultado': valores
-        })
-        
-        # Converte para numérico para o gráfico
-        resultado_num = {'C': 1, 'V': 2, 'E': 3}
-        df_hist['Resultado_Num'] = df_hist['Resultado'].map(resultado_num)
-        
-        fig = px.line(df_hist, x='Jogo', y='Resultado_Num',
-                     title="Sequência de Resultados",
-                     labels={'Resultado_Num': 'Resultado'})
-        
-        fig.update_yaxis(
-            tickvals=[1, 2, 3],
-            ticktext=['Casa', 'Visitante', 'Empate']
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
     
-    # Display das últimas jogadas
-    st.write("**Últimas 18 jogadas:**")
-    ultimas = list(reversed(get_valores(h, 18)))
+    # Últimas 21 jogadas (3 linhas de 7)
+    st.write("**Últimas 21 jogadas (mais recente à direita):**")
+    ultimas_21 = list(reversed(valores[-21:]))
     
-    # Organiza em 3 linhas de 6
-    for linha in range(3):
-        cols = st.columns(6)
-        for col_idx in range(6):
-            idx = linha * 6 + col_idx
-            if idx < len(ultimas):
-                resultado = ultimas[idx]
+    # Organiza em linhas
+    linhas = []
+    for i in range(0, len(ultimas_21), 7):
+        linha = ultimas_21[i:i+7]
+        linhas.append(linha)
+    
+    for linha in linhas:
+        cols = st.columns(7)
+        for i, resultado in enumerate(linha):
+            if i < len(cols):
                 emoji = bolha_cor(resultado)
-                cols[col_idx].markdown(f"<div style='text-align: center; font-size: 2rem;'>{emoji}</div>", unsafe_allow_html=True)
+                css_class = get_css_class(resultado)
+                cols[i].markdown(f"""
+                <div class="game-bubble {css_class}">
+                    {emoji}
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # Sequência simples dos últimos 12
+    st.write("**Sequência dos últimos 12:**")
+    ultimos_12 = list(reversed(valores[-12:]))
+    sequencia_str = " → ".join([f"{bolha_cor(r)}" for r in ultimos_12])
+    st.markdown(f"""
+    <div class="sequence-display">
+        {sequencia_str}
+    </div>
+    """, unsafe_allow_html=True)
 
 # Métricas principais
 if get_valores(h):
@@ -511,69 +650,248 @@ if get_valores(h):
     maior_seq = maior_sequencia(h)
     seq_final = sequencia_final(h)
     ent = entropia(h)
+    momentum = analise_momentum(h)
     
     with col1:
-        st.metric(
-            "Maior Sequência", 
-            f"{maior_seq['tamanho']} ({maior_seq['tipo']})" if maior_seq['tipo'] else "0"
-        )
+        valor = f"{maior_seq['tamanho']}" if maior_seq['tipo'] else "0"
+        if maior_seq['tipo']:
+            valor += f" ({bolha_cor(maior_seq['tipo'])} {maior_seq['tipo']})"
+        st.metric("Maior Sequência", valor)
     
     with col2:
-        st.metric(
-            "Sequência Atual",
-            f"{seq_final['tamanho']} ({seq_final['tipo']})" if seq_final['tipo'] else "0"
-        )
+        valor = f"{seq_final['tamanho']}" if seq_final['tipo'] else "0"
+        if seq_final['tipo']:
+            valor += f" ({bolha_cor(seq_final['tipo'])} {seq_final['tipo']})"
+        st.metric("Sequência Atual", valor)
     
     with col3:
-        st.metric("Entropia", f"{ent:.1f}%")
+        cor_entropia = "🟢" if ent > 80 else ("🟡" if ent > 60 else "🔴")
+        st.metric("Entropia", f"{cor_entropia} {ent:.1f}%")
     
     with col4:
-        momentum = analise_momentum(h)
-        st.metric("Momentum", f"{momentum['direcao']} ({momentum['intensidade']})")
+        momentum_display = f"{bolha_cor(momentum['direcao'])} {momentum['direcao']}"
+        if momentum['intensidade'] != 'baixa':
+            momentum_display += f" ({momentum['intensidade']})"
+        st.metric("Momentum", momentum_display)
+
+# Tendências
+if len(get_valores(h)) >= 6:
+    st.subheader("📈 Análise de Tendências")
+    
+    tendencias = calcular_tendencias(h)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**📊 Curto Prazo (últimas 6)**")
+        if tendencias.get("curto_prazo"):
+            cp = tendencias["curto_prazo"]
+            for resultado in ["C", "V", "E"]:
+                count = cp["distribuicao"].get(resultado, 0)
+                pct = (count / 6) * 100
+                barra = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
+                st.write(f"{bolha_cor(resultado)} {resultado}: {count} ({pct:.0f}%) {barra}")
+    
+    with col2:
+        st.write("**📈 Longo Prazo (últimas 18)**")
+        if tendencias.get("longo_prazo"):
+            lp = tendencias["longo_prazo"]
+            total_lp = lp["periodo"]
+            for resultado in ["C", "V", "E"]:
+                count = lp["distribuicao"].get(resultado, 0)
+                pct = (count / total_lp) * 100 if total_lp > 0 else 0
+                barra = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
+                st.write(f"{bolha_cor(resultado)} {resultado}: {count} ({pct:.0f}%) {barra}")
 
 # Análises avançadas
 if show_advanced and len(get_valores(h)) >= 10:
     st.subheader("🧠 Análises Avançadas")
     
-    # Análise de ciclos
-    ciclos = analise_ciclos(h)
-    if ciclos["ciclos"]:
-        st.write("**Padrões Cíclicos Detectados:**")
-        for i, ciclo in enumerate(ciclos["ciclos"][:3], 1):
-            padrao_str = "".join([bolha_cor(x) for x in ciclo["padrao"]])
-            st.write(f"{i}. {padrao_str} (repetido {ciclo['repeticoes']}x)")
+    col1, col2 = st.columns(2)
     
-    # Análise de reversões
-    reversao = detectar_reversoes(h)
-    if reversao["probabilidade_reversao"] > 20:
-        st.markdown(f"""
-        <div class="pattern-alert">
-            <strong>⚠️ Alerta de Reversão</strong><br>
-            Probabilidade de mudança: {reversao["probabilidade_reversao"]:.1f}%<br>
-            Sequência atual: {reversao["seq_atual"]} {seq_final["tipo"] if seq_final["tipo"] else ""}
-        </div>
-        """, unsafe_allow_html=True)
+    with col1:
+        # Análise de ciclos
+        ciclos = analise_ciclos(h)
+        if ciclos["ciclos"]:
+            st.write("**🔄 Padrões Cíclicos Detectados:**")
+            for i, ciclo in enumerate(ciclos["ciclos"][:3], 1):
+                padrao_str = " → ".join([f"{bolha_cor(x)} {x}" for x in ciclo["padrao"]])
+                st.write(f"{i}. {padrao_str}")
+                st.write(f"   ↳ Repetido **{ciclo['repeticoes']}x** (tamanho: {ciclo['tamanho']})")
+        
+        # Padrões especiais
+        padroes = analise_padroes_especiais(h)
+        if padroes:
+            st.write("**🎯 Padrões Especiais:**")
+            
+            if padroes.get("alternancia_perfeita"):
+                st.write("✅ **Alternância Perfeita** detectada")
+            
+            if padroes.get("padrao_abc"):
+                st.write("✅ **Padrão ABC** (C-V-E) detectado")
+            
+            if padroes.get("dominancia_recente", {}).get("ativo"):
+                dom = padroes["dominancia_recente"]
+                st.write(f"⚠️ **Dominância**: {bolha_cor(dom['resultado'])} {dom['resultado']} dominou {dom['frequencia']}/9 jogos recentes")
     
-    # Distribuição estatística
-    dist = analise_distribuicao_avancada(h)
-    if dist:
-        st.write("**Análise Estatística:**")
-        col1, col2 = st.columns(2)
+    with col2:
+        # Análise de reversões
+        reversao = detectar_reversoes(h)
+        if reversao["probabilidade_reversao"] > 20:
+            st.markdown(f"""
+            <div class="pattern-alert">
+                <strong>⚠️ Alerta de Reversão</strong><br>
+                Probabilidade de mudança: <strong>{reversao["probabilidade_reversao"]:.1f}%</strong><br>
+                Sequência atual: {reversao["seq_atual"]} {bolha_cor(sequencia_final(h)["tipo"]) if sequencia_final(h)["tipo"] else ""} {sequencia_final(h)["tipo"] or ""}
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Distribuição estatística
+        dist = analise_distribuicao_avancada(h)
+        if dist:
+            st.write("**📊 Análise Estatística:**")
+            
+            st.write("*Distribuição vs Expectativa:*")
+            total = sum(dist["distribuicao"].values())
+            expectativa = total / 3
+            
+            for resultado in ["C", "V", "E"]:
+                atual = dist["distribuicao"].get(resultado, 0)
+                diff = atual - expectativa
+                seta = "📈" if diff > 0 else ("📉" if diff < 0 else "➡️")
+                st.write(f"• {bolha_cor(resultado)} {resultado}: {atual} {seta} ({diff:+.1f})")
+            
+            st.write(f"**Mais defasado:** {bolha_cor(dist['mais_defasado'])} {dist['mais_defasado']}")
+            st.write(f"**Coef. variação:** {dist['coef_variacao']:.1f}%")
+            st.write(f"**Chi-square:** {dist['chi_square']:.2f}")
+
+# Seção de insights e dicas
+if len(get_valores(h)) >= 15:
+    st.subheader("💡 Insights e Recomendações")
+    
+    insights = []
+    v = get_valores(h)
+    
+    # Insight sobre entropia
+    ent = entropia(h)
+    if ent > 85:
+        insights.append("🎲 **Alta randomização** - Resultados muito equilibrados, difícil prever padrões")
+    elif ent < 50:
+        insights.append("📊 **Baixa entropia** - Padrões mais previsíveis, alguns resultados dominando")
+    
+    # Insight sobre sequências
+    maior_seq = maior_sequencia(h)
+    if maior_seq["tamanho"] >= 5:
+        insights.append(f"🔥 **Sequência longa detectada** - {maior_seq['tamanho']} {maior_seq['tipo']} consecutivos. Probabilidade de mudança aumenta!")
+    
+    # Insight sobre momentum
+    momentum = analise_momentum(h)
+    if momentum["confianca"] > 70:
+        insights.append(f"📈 **Momentum forte** - Tendência {momentum['intensidade']} para {bolha_cor(momentum['direcao'])} {momentum['direcao']}")
+    
+    # Insight sobre distribuição
+    contagem = Counter(v)
+    mais_freq = contagem.most_common(1)[0]
+    menos_freq = contagem.most_common()[-1]
+    
+    if mais_freq[1] - menos_freq[1] >= len(v) * 0.3:
+        insights.append(f"⚖️ **Desbalanceamento significativo** - {bolha_cor(mais_freq[0])} {mais_freq[0]} muito mais frequente que {bolha_cor(menos_freq[0])} {menos_freq[0]}")
+    
+    # Insight sobre padrões especiais
+    padroes = analise_padroes_especiais(h)
+    if padroes.get("alternancia_perfeita"):
+        insights.append("🔄 **Alternância perfeita** - Padrão raro detectado, probabilidade de quebra aumenta")
+    
+    if insights:
+        for insight in insights:
+            st.write(insight)
+    else:
+        st.write("📝 Acumule mais dados para insights mais precisos")
+
+# Seção de estatísticas detalhadas
+if show_advanced and len(get_valores(h)) >= 20:
+    with st.expander("📈 Estatísticas Detalhadas"):
+        v = get_valores(h)
+        
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.write("Distribuição atual:")
-            for resultado in ["C", "V", "E"]:
-                count = dist["distribuicao"].get(resultado, 0)
-                total = sum(dist["distribuicao"].values())
-                pct = (count / total * 100) if total > 0 else 0
-                st.write(f"• {bolha_cor(resultado)} {resultado}: {count} ({pct:.1f}%)")
+            st.write("**Análise por Período:**")
+            
+            # Primeiros vs Últimos 10
+            if len(v) >= 20:
+                primeiros_10 = Counter(v[:10])
+                ultimos_10 = Counter(v[-10:])
+                
+                st.write("*Primeiros 10:*")
+                for resultado in ["C", "V", "E"]:
+                    st.write(f"• {resultado}: {primeiros_10.get(resultado, 0)}")
+                
+                st.write("*Últimos 10:*")
+                for resultado in ["C", "V", "E"]:
+                    st.write(f"• {resultado}: {ultimos_10.get(resultado, 0)}")
         
         with col2:
-            st.write("Métricas:")
-            st.write(f"• Mais defasado: {bolha_cor(dist['mais_defasado'])} {dist['mais_defasado']}")
-            st.write(f"• Coef. variação: {dist['coef_variacao']:.1f}%")
-            st.write(f"• Chi-square: {dist['chi_square']:.2f}")
+            st.write("**Análise de Sequências:**")
+            
+            # Contagem de todas as sequências
+            sequencias = {"1": 0, "2": 0, "3": 0, "4": 0, "5+": 0}
+            atual_seq = 1
+            
+            for i in range(1, len(v)):
+                if v[i] == v[i-1]:
+                    atual_seq += 1
+                else:
+                    seq_key = str(min(atual_seq, 5)) if atual_seq < 5 else "5+"
+                    if atual_seq > 1:  # Só conta sequências > 1
+                        sequencias[seq_key] += 1
+                    atual_seq = 1
+            
+            # Conta a última sequência se > 1
+            if atual_seq > 1:
+                seq_key = str(min(atual_seq, 5)) if atual_seq < 5 else "5+"
+                sequencias[seq_key] += 1
+            
+            for tam, count in sequencias.items():
+                if tam != "1":  # Não mostra sequências de 1
+                    st.write(f"• Sequências de {tam}: {count}")
+        
+        with col3:
+            st.write("**Métricas Avançadas:**")
+            
+            # Taxa de alternância
+            alternacoes = sum(1 for i in range(1, len(v)) if v[i] != v[i-1])
+            taxa_alternancia = (alternacoes / (len(v) - 1)) * 100 if len(v) > 1 else 0
+            
+            st.write(f"• Taxa alternância: {taxa_alternancia:.1f}%")
+            st.write(f"• Entropia: {entropia(h):.1f}%")
+            
+            # Distância média entre empates
+            empates_pos = [i for i, r in enumerate(v) if r == 'E']
+            if len(empates_pos) >= 2:
+                distancias = [empates_pos[i] - empates_pos[i-1] for i in range(1, len(empates_pos))]
+                dist_media = sum(distancias) / len(distancias)
+                st.write(f"• Dist. média empates: {dist_media:.1f}")
 
-# Footer
+# Footer com informações
 st.markdown("---")
-st.markdown("**💡 Dica:** Use as análises como apoio à decisão, nunca como garantia de resultado.")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown("**🎯 Como usar:**")
+    st.markdown("• Registre os resultados dos jogos")
+    st.markdown("• Acompanhe as predições inteligentes")
+    st.markdown("• Use as análises como apoio à decisão")
+
+with col2:
+    st.markdown("**📊 Algoritmos:**")
+    st.markdown("• Análise de momentum")
+    st.markdown("• Detecção de ciclos")
+    st.markdown("• Probabilidade de reversão")
+    st.markdown("• Compensação estatística")
+
+with col3:
+    st.markdown("**⚠️ Avisos:**")
+    st.markdown("• Resultados passados ≠ futuros")
+    st.markdown("• Use com responsabilidade")
+    st.markdown("• Ferramenta de análise, não garantia")
