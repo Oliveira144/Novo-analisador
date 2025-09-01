@@ -226,7 +226,7 @@ def sugestao(h):
     return {"texto": texto, "tipo": tipo, "bet": melhor, "confianca": confianca, "score": score}
 
 # -------------------------
-# Interface
+# Interface reformulada
 # -------------------------
 st.title("🎲 Football Studio Live — Leitura Estratégica")
 
@@ -256,39 +256,48 @@ st.subheader("🧾 Histórico visual (últimas linhas)")
 bolhas = [bolha_cor(r) for r in reversed(h)]
 for i in range(0, len(bolhas), 9):
     linha = bolhas[i:i+9]
-    st.markdown(" ".join(linha))
+    st.markdown(" ".join(linha), unsafe_allow_html=True)
 
-# Métricas principais
-st.subheader("📊 Análises recentes")
-valores = get_valores(h)
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Casa", valores.count("C"))
-col2.metric("Total Visitante", valores.count("V"))
-col3.metric("Total Empates", valores.count("E"))
-
-st.write("---")
-col1, col2, col3 = st.columns(3)
+# Métricas principais organizadas
+st.subheader("📊 Métricas Recentes")
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("Maior sequência", maior_sequencia(h))
 col2.metric("Alternância total", alternancia(h))
 col3.metric("Distância entre empates", dist_empates(h) or "-")
+col4.metric("Entropia (%)", f"{entropia(h):.1f}")
 
 st.write("---")
-col1, col2 = st.columns(2)
+# Eco visual, parcial e blocos
+col1, col2, col3 = st.columns(3)
 col1.metric("Eco visual", eco_visual(h)["status"])
 col2.metric("Eco parcial", eco_parcial(h)["status"])
-st.write(f"Blocos espelhados: **{blocos_espelhados(h)}**")
-st.write(f"Tendência final: **{tendencia_final(h)}**")
-st.write(f"Alternância por linha: **{alternancia_por_linha(h)}**")
+col3.metric("Blocos espelhados", blocos_espelhados(h))
 
-# Novas métricas
+st.write("---")
+# Tendência final
+tend = tendencia_final(h)
+st.subheader("📈 Tendência final últimos 5")
+st.table({
+    "Casa 🟥": [tend["C"]],
+    "Visitante 🟦": [tend["V"]],
+    "Empates 🟨": [tend["E"]]
+})
+
+# Alternância por linha
+st.subheader("🔄 Alternância por linha")
+st.write(alternancia_por_linha(h))
+
+# Análise avançada
 st.subheader("🔎 Análise Avançada de Padrões")
+st.write("Contagem de Sequências:", contagem_sequencias(h))
+st.write("Quebra de Padrão:", quebra_padrao(h)["status"])
+
+# Análise por terço
 analise_tercos = analise_por_terco(h)
 if analise_tercos:
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Terço 1", f"C:{analise_tercos['t1']['C']} V:{analise_tercos['t1']['V']} E:{analise_tercos['t1']['E']}")
-    col2.metric("Terço 2", f"C:{analise_tercos['t2']['C']} V:{analise_tercos['t2']['V']} E:{analise_tercos['t2']['E']}")
-    col3.metric("Terço 3", f"C:{analise_tercos['t3']['C']} V:{analise_tercos['t3']['V']} E:{analise_tercos['t3']['E']}")
-
-st.write(f"Contagem de Sequências: **{contagem_sequencias(h)}**")
-st.write(f"Quebra de Padrão: **{quebra_padrao(h)['status']}**")
-st.write(f"Entropia: **{entropia(h):.1f}%**")
+    st.write("📊 Tendência por Terço (últimas 27 jogadas)")
+    st.table({
+        "Terço 1": [f"C:{analise_tercos['t1']['C']} V:{analise_tercos['t1']['V']} E:{analise_tercos['t1']['E']}"],
+        "Terço 2": [f"C:{analise_tercos['t2']['C']} V:{analise_tercos['t2']['V']} E:{analise_tercos['t2']['E']}"],
+        "Terço 3": [f"C:{analise_tercos['t3']['C']} V:{analise_tercos['t3']['V']} E:{analise_tercos['t3']['E']}"]
+    })
