@@ -154,6 +154,7 @@ def sugestao(h):
     valores = get_valores(h)
     if not valores:
         return "Insira resultados para gerar previsão.", "info"
+    
     ult = valores[-1]
     seq = sequencia_final(h)
     eco = eco_visual(h)
@@ -171,8 +172,14 @@ def sugestao(h):
         return "🟨 Empate recente — instável, possível 🟥 ou 🟦", "warning"
     if eco == "Detectado" or parcial.startswith(("5", "6")):
         return f"🔄 Reescrita visual — repetir padrão com {bolha_cor(ult)}", "success"
-    maior = max(contagens, key=contagens.get)
-    return f"📊 Tendência favorece entrada em {bolha_cor(maior)} ({maior})", "info"
+    
+    # Ajuste: Apenas sugere a cor mais frequente se houver dados suficientes.
+    if len(valores) >= 9:
+        maior = max(contagens, key=contagens.get)
+        return f"📊 Tendência favorece entrada em {bolha_cor(maior)} ({maior})", "info"
+    else:
+        return "Continue inserindo dados para análises mais precisas.", "info"
+
 
 def exibir_historico(h):
     h_reverso = h[::-1]
@@ -258,13 +265,13 @@ st.write(f"Variação de Alternância: **{variacao_alternancia(h)}**")
 # Alertas
 st.subheader("🚨 Alerta estratégico")
 alertas = []
-if sequencia_final(h) >= 5 and valores[-1] in ["C", "V"]:
+if len(valores) > 0 and sequencia_final(h) >= 5 and valores[-1] in ["C", "V"]:
     alertas.append(("🟥 Sequência final ativa — possível inversão", "error"))
 if eco_visual(h) == "Detectado":
     alertas.append(("🔁 Eco visual detectado — possível repetição", "warning"))
-if eco_parcial(h).startswith(("4", "5", "6")):
+if isinstance(eco_parcial(h), str) and eco_parcial(h).startswith(("4", "5", "6")):
     alertas.append(("🧠 Eco parcial — padrão reescrito com semelhança", "info"))
-if dist_empates(h) == 1:
+if isinstance(dist_empates(h), int) and dist_empates(h) == 1:
     alertas.append(("🟨 Empates consecutivos — instabilidade", "error"))
 if blocos_espelhados(h) >= 1:
     alertas.append(("🧩 Bloco espelhado — reflexo estratégico", "info"))
