@@ -1,12 +1,10 @@
-# analisador_football_studio_avancado.py
+# analisador_football_studio_avancado_sem_plotly.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 from collections import Counter, defaultdict
 import math
 import os
-import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime
 
 # -------------------------
@@ -493,53 +491,19 @@ def pattern_based_prediction(results, h):
     return probs, best
 
 # -------------------------
-# Funções de visualização
+# Funções de visualização (Simplificadas)
 # -------------------------
 def create_history_chart(history):
     if not history:
         return None
     
     df = pd.DataFrame({
-        'Posicao': range(1, len(history) + 1),
         'Resultado': history,
-        'Cor': [EMOJI_MAP[h] for h in history]
+        'Posição': range(1, len(history) + 1)
     })
     
-    color_map = {'🔴': '#FF4444', '🔵': '#4444FF', '🟡': '#FFD700'}
+    st.bar_chart(df['Resultado'].value_counts())
     
-    fig = go.Figure()
-    
-    for color_emoji, color_hex in color_map.items():
-        mask = df['Cor'] == color_emoji
-        if mask.any():
-            fig.add_trace(go.Scatter(
-                x=df[mask]['Posicao'],
-                y=[0] * len(df[mask]),
-                mode='markers',
-                marker=dict(
-                    color=color_hex,
-                    size=20
-                ),
-                name=list(EMOJI_MAP.keys())[list(EMOJI_MAP.values()).index(color_emoji)],
-                text=[f"Pos: {pos}<br>Res: {res}" for pos, res in zip(df[mask]['Posicao'], df[mask]['Resultado'])],
-                hovertemplate='%{text}<extra></extra>'
-            ))
-            
-    fig.update_layout(
-        title="Histórico de Resultados",
-        xaxis_title="Sequência de Rodadas",
-        yaxis_title="Resultados",
-        yaxis=dict(
-            tickvals=[0],
-            ticktext=['Resultados'],
-            showgrid=False
-        ),
-        showlegend=True,
-        height=300
-    )
-    
-    return fig
-
 # -------------------------
 # Interface do Streamlit
 # -------------------------
@@ -585,13 +549,53 @@ def main():
         st.markdown(f"**Total de Rodadas:** {len(st.session_state.history)}")
         st.markdown(f"**Sequência:** {' '.join(st.session_state.history_display)}")
         
-        history_chart = create_history_chart(st.session_state.history)
-        if history_chart:
-            st.plotly_chart(history_chart, use_container_width=True)
-            
+        # Gráfico de barras simples para a frequência de resultados
+        st.markdown("#### Frequência dos Resultados")
+        result_counts = pd.DataFrame(Counter(st.session_state.history).items(), columns=['Resultado', 'Contagem'])
+        st.bar_chart(result_counts.set_index('Resultado'))
+        
         results, level = aggregate_detection(st.session_state.history)
         probs, best_pred = pattern_based_prediction(results, st.session_state.history)
         
         st.markdown("---")
         st.markdown("### Análise Avançada")
-   
+        
+        col_main1, col_main2, col_main3 = st.columns(3)
+        
+        with col_main1:
+            st.metric(
+                label="Nível de Padrão Detectado",
+                value=f"Nível {level}",
+                delta="Baseado em complexidade e força dos padrões"
+            )
+        
+        with col_main2:
+            st.metric(
+                label="Previsão mais provável",
+                value=f"{COLOR_NAMES[best_pred[0]]} {EMOJI_MAP[best_pred[0]]}",
+                delta=f"{best_pred[1]}% de chance"
+            )
+        
+        with col_main3:
+            st.markdown("#### Probabilidades")
+            # Usando uma tabela ou texto para exibir as probabilidades
+            probs_df = pd.DataFrame(probs.items(), columns=['Resultado', 'Probabilidade'])
+            st.dataframe(probs_df.set_index('Resultado'))
+        
+        st.markdown("---")
+        st.markdown("### Padrões Detectados")
+        
+        detected_patterns = {k: v for k, v in results.items() if v.get('found')}
+        if detected_patterns:
+            for pattern_name, details in detected_patterns.items():
+                st.markdown(f"**- {pattern_name.replace('_', ' ').title()}**: Confiança {details.get('conf')}%")
+                if details.get('pattern'):
+                    pattern_emojis = [EMOJI_MAP.get(p, '?') for p in details['pattern']]
+                    st.markdown(f"  Padrão: `{' '.join(details['pattern'])}` -> {' '.join(pattern_emojis)}")
+        else:
+            st.info("Nenhum padrão forte detectado na sequência atual.")
+    else:
+        st.info("Adicione alguns resultados para iniciar a análise.")
+
+if __name__ == "__main__":
+    main()
