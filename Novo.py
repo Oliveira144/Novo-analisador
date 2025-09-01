@@ -530,13 +530,13 @@ def main():
     
     if casa_button:
         st.session_state.history.append('C')
-        st.session_state.history_display += EMOJI_MAP['C']
+        st.session_state.history_display = EMOJI_MAP['C'] + st.session_state.history_display
     elif visitante_button:
         st.session_state.history.append('V')
-        st.session_state.history_display += EMOJI_MAP['V']
+        st.session_state.history_display = EMOJI_MAP['V'] + st.session_state.history_display
     elif empate_button:
         st.session_state.history.append('E')
-        st.session_state.history_display += EMOJI_MAP['E']
+        st.session_state.history_display = EMOJI_MAP['E'] + st.session_state.history_display
         
     st.sidebar.markdown("---")
     st.sidebar.header("Controles")
