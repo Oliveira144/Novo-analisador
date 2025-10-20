@@ -1,129 +1,166 @@
 import streamlit as st
+import csv
 import random
-import numpy as np
 
 st.set_page_config(
-    page_title="Football Studio – IA Preditiva",
+    page_title="Football Studio – IA Ultra Avançada",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# === Tema escuro e estilo ===
+# === Estilo dark ===
 st.markdown("""
-    <style>
-    body { background-color: #0e1117; color: #fafafa; }
-    .stButton>button {
-        border-radius: 10px;
-        height: 3em;
-        width: 100%;
-        font-weight: bold;
-        background: linear-gradient(90deg, #e50914, #111);
-        color: white;
-    }
-    .stButton>button:hover { filter: brightness(1.2); }
-    .css-1v3fvcr { background-color: #0e1117 !important; }
-    .block-container { padding-top: 1rem; }
-    </style>
+<style>
+body { background-color: #0e1117; color: #fafafa; }
+.stButton>button { border-radius: 10px; height: 3em; width: 100%; font-weight: bold; color: white; }
+.block-container { padding-top: 1rem; }
+</style>
 """, unsafe_allow_html=True)
 
-st.title("⚽ Football Studio – Inteligência Preditiva Adaptativa")
-st.caption("Sistema de leitura de manipulação, padrões e previsões dinâmicas (níveis 1–9)")
+st.title("⚽ Football Studio – IA Ultra Avançada")
+st.caption("Casa 🔴 | Visitante 🔵 | Empate 🟡")
 
-# === Estado persistente (cache local da sessão) ===
+HIST_FILE = "historico.csv"
+
+# === Estado da sessão ===
 if "history" not in st.session_state:
     st.session_state.history = []
 
 # === Funções de análise ===
-def detect_pattern_level(history):
-    """Detecta o nível de manipulação (1–9) com base nos padrões."""
-    if not history:
-        return 1
-    seq = ''.join(history[-9:])  # últimas 9 jogadas
-    unique = len(set(seq))
-    if unique == 1:
-        return 1  # repetição total
+def detectar_padrao(seq):
+    """Detecta padrão e nível de manipulação (1–9)"""
+    nivel = 1
+    padrao = "Sem padrão definido"
+    if len(seq) < 4:
+        return padrao, nivel
+    # Repetição total
+    if len(set(seq)) == 1:
+        nivel = 1
+        padrao = "Repetição Total"
+    # Repetição cíclica curta
     elif seq[-3:] == seq[-6:-3]:
-        return 3  # padrão duplicado
-    elif "🟡" in seq and (seq.count("🟡") > 1):
-        return 4  # empate como âncora
+        nivel = 2
+        padrao = "Repetição Cíclica"
+    # Empate como âncora
+    elif "🟡" in seq and seq.count("🟡") > 1:
+        nivel = 3
+        padrao = "Empate como Âncora"
+    # Equilíbrio simulado
     elif seq.count("🔴") == seq.count("🔵"):
-        return 5  # equilíbrio manipulativo
+        nivel = 4
+        padrao = "Equilíbrio Simulado"
+    # Alternância forçada
     elif seq.endswith("🔴🔵🔴") or seq.endswith("🔵🔴🔵"):
-        return 6  # alternância forçada
-    elif seq.count("🟡") >= 2 and ("🔴" in seq and "🔵" in seq):
-        return 7  # manipulação quântica leve
-    elif len(seq) == 9 and len(set(seq)) == 3:
-        return 8  # padrão camuflado
+        nivel = 5
+        padrao = "Alternância Forçada"
+    # Quebra pós-empate
+    elif "🟡" in seq and (seq.endswith("🟡🔴") or seq.endswith("🟡🔵")):
+        nivel = 6
+        padrao = "Quebra Pós-Empate"
+    # Manipulação quântica leve
+    elif len(seq) >= 9 and len(set(seq[-9:])) == 3:
+        nivel = 7
+        padrao = "Manipulação Quântica Leve"
+    # Tendência forçada
+    elif seq.count("🔴") > seq.count("🔵") * 2 or seq.count("🔵") > seq.count("🔴") * 2:
+        nivel = 8
+        padrao = "Tendência Forçada"
+    # Manipulação oculta complexa
     else:
-        return 9  # manipulação oculta / colapso de probabilidade
+        nivel = 9
+        padrao = "Manipulação Oculta Complexa"
+    return padrao, nivel
 
-def predict_next(history):
-    """Gera previsão com base em leitura adaptativa de padrões."""
-    if not history:
-        return "Aguardando dados", 0.0
-    last = history[-5:]
-    counts = {r: last.count(r) for r in ["🔴", "🔵", "🟡"]}
-    total = sum(counts.values())
-    probs = {k: v/total for k,v in counts.items()}
-    manip_level = detect_pattern_level(history)
-    adjust = (manip_level / 10)
-    for k in probs:
-        probs[k] = max(0.05, probs[k] * (1 - random.uniform(0, adjust/2)))
-    prediction = max(probs, key=probs.get)
-    confidence = round(probs[prediction] * 100, 2)
-    return prediction, confidence
+def analisar_curto_medio(h):
+    """Analisa os últimos 9 e 18 resultados"""
+    curto = h[:9]
+    medio = h[:18] if len(h) >= 18 else h[:len(h)]
+    padrao_curto, nivel_curto = detectar_padrao(curto)
+    padrao_medio, nivel_medio = detectar_padrao(medio)
 
-def get_breach_alert(level):
-    """Alerta de manipulação com base no nível."""
-    if level <= 2:
-        return "🟢 Padrão estável – baixa manipulação"
-    elif level <= 5:
-        return "🟡 Manipulação média – possível inversão breve"
-    elif level <= 7:
-        return "🟠 Alta manipulação – padrão falso provável"
+    # Combina análise para previsão
+    tendencia = {"🔴":0, "🔵":0, "🟡":0}
+    for i in range(len(curto)):
+        if i > 0 and curto[i] != curto[i-1]:
+            tendencia[curto[i]] +=1
+        else:
+            tendencia[curto[i]] +=2
+    for i in range(len(medio)):
+        if i > 0 and medio[i] != medio[i-1]:
+            tendencia[medio[i]] +=0.5
+        else:
+            tendencia[medio[i]] +=1
+
+    # Ajuste conforme nível médio
+    nivel_comb = max(nivel_curto, nivel_medio)
+    for k in tendencia:
+        tendencia[k] = tendencia[k] * (1 - nivel_comb/20)
+
+    pred = max(tendencia, key=tendencia.get)
+    conf = round((tendencia[pred]/sum(tendencia.values()))*100,2)
+
+    # Recomendação baseada nos padrões detectados
+    if nivel_comb <= 2:
+        recomendacao = f"Alta probabilidade de repetição de {pred}"
+    elif nivel_comb <= 5:
+        recomendacao = f"Possível inversão, tendência {pred}"
+    elif nivel_comb <=7:
+        recomendacao = f"Falso padrão detectado, tendência {pred}"
     else:
-        return "🔴 Nível crítico – manipulação quântica detectada"
+        recomendacao = f"Padrão oculto, manipulação alta, cuidado ao apostar"
 
-# === Interface ===
+    return padrao_curto, padrao_medio, nivel_comb, pred, conf, recomendacao
+
+def salvar_historico(h):
+    with open(HIST_FILE, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(h)
+    st.success("✅ Histórico salvo com sucesso!")
+
+# === Botões de inserção ===
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    if st.button("🔴 Player"):
-        st.session_state.history.append("🔴")
+    if st.button("🔴 Casa"):
+        st.session_state.history.insert(0, "🔴")
 with col2:
-    if st.button("🔵 Banker"):
-        st.session_state.history.append("🔵")
+    if st.button("🔵 Visitante"):
+        st.session_state.history.insert(0, "🔵")
 with col3:
     if st.button("🟡 Empate"):
-        st.session_state.history.append("🟡")
+        st.session_state.history.insert(0, "🟡")
 
 st.divider()
+col_clear, col_save = st.columns(2)
+with col_clear:
+    if st.button("🧹 Limpar Histórico"):
+        st.session_state.history = []
+with col_save:
+    if st.button("💾 Salvar Histórico"):
+        salvar_historico(st.session_state.history)
 
-if st.button("🔄 Limpar histórico"):
-    st.session_state.history = []
-
+# === Exibição ===
 if st.session_state.history:
-    level = detect_pattern_level(st.session_state.history)
-    pred, conf = predict_next(st.session_state.history)
-    alert = get_breach_alert(level)
+    padrao9, padrao18, nivel, pred, conf, recomendacao = analisar_curto_medio(st.session_state.history)
 
-    st.subheader("📊 Histórico")
-    grid = ""
-    for i, r in enumerate(st.session_state.history):
-        grid += r
-        if (i + 1) % 9 == 0:
-            grid += "\n"
-    st.code(grid.strip(), language="")
+    st.subheader("📊 Histórico (mais recente à esquerda)")
+    linhas = ""
+    for i,r in enumerate(st.session_state.history):
+        linhas += r
+        if (i+1)%9==0:
+            linhas += "\n"
+    st.code(linhas.strip(), language="")
 
-    st.subheader("🧠 Análise Preditiva")
-    colA, colB, colC = st.columns(3)
-    colA.metric("Nível de Manipulação", level)
-    colB.metric("Previsão", pred)
-    colC.metric("Confiança (%)", conf)
+    st.subheader("🧠 Análise Ultra Avançada")
+    colA, colB, colC, colD, colE, colF = st.columns(6)
+    colA.metric("Nível Manipulação", nivel)
+    colB.metric("Padrão Últ. 9", padrao9)
+    colC.metric("Padrão Últ. 18", padrao18)
+    colD.metric("Previsão", pred)
+    colE.metric("Confiança (%)", conf)
+    colF.metric("Recomendação", recomendacao)
 
-    st.info(alert)
 else:
     st.warning("Adicione resultados para iniciar a leitura preditiva.")
 
 st.divider()
-st.caption("⚙️ Sistema adaptativo de leitura quântica • IA preditiva v2.1")
+st.caption("⚙️ IA Ultra Avançada – Football Studio • Helio System")
